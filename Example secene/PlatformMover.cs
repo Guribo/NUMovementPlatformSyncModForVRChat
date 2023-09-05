@@ -1,8 +1,10 @@
 ﻿
+using NUMovementPlatformSyncMod;
 using UdonSharp;
 using UnityEngine;
 using VRC.SDKBase;
 
+[DefaultExecutionOrder(StationController.ExecutionOrder - 1)]
 public class PlatformMover : UdonSharpBehaviour
 {
     double transitionTime = 2;

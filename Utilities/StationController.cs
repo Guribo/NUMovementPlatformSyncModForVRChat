@@ -1,4 +1,4 @@
-﻿//#define enableSmoothTimeControl
+﻿#define enableSmoothTimeControl
 using UdonSharp;
 using UnityEngine;
 using VRC.SDKBase;
@@ -6,8 +6,10 @@ using VRC.Udon;
 
 namespace NUMovementPlatformSyncMod
 {
+    [UdonBehaviourSyncMode(BehaviourSyncMode.Manual)]
     public class StationController : UdonSharpBehaviour
     {
+        public const int ExecutionOrder = 0;
         [SerializeField] VRCStation linkedStation;
 
         [UdonSynced] public int attachedTransformIndex = -1;
@@ -39,17 +41,18 @@ namespace NUMovementPlatformSyncMod
         float nextSerializationTime = 0f;
         public bool serialize = false;
 
-        private void Update()
+        public override void PostLateUpdate()
         {
+            var ownTransform = transform;
             if (Input.GetKeyDown(KeyCode.Home))
             {
                 Debug.Log($" ");
                 Debug.Log($"Debug of {nameof(StationController)}");
                 Debug.Log($"{nameof(attachedTransformIndex)} = {attachedTransformIndex}");
                 Debug.Log($"{nameof(syncedLocalPlayerPosition)} = {syncedLocalPlayerPosition}");
-                Debug.Log($"transform.localPosition = {transform.localPosition}");
+                Debug.Log($"transform.localPosition = {ownTransform.localPosition}");
                 Debug.Log($"{nameof(syncedLocalPlayerHeading)} = {syncedLocalPlayerHeading}");
-                Debug.Log($"transform.localRotation.eulerAngles = {transform.localRotation.eulerAngles}");
+                Debug.Log($"transform.localRotation.eulerAngles = {ownTransform.localRotation.eulerAngles}");
                 Debug.Log($"{nameof(GroundTransform)} = {GroundTransform}");
                 Debug.Log($"{nameof(movingTransforms)}.Length = {movingTransforms.Length}");
                 Debug.Log($"{nameof(previouslyAttachedTransformIndex)} = {previouslyAttachedTransformIndex}");
@@ -76,15 +79,29 @@ namespace NUMovementPlatformSyncMod
 
             if (inStation)
             {
-                transform.localPosition = Vector3.SmoothDamp(transform.localPosition, syncedLocalPlayerPosition, ref previousPlayerLinearVelocity, smoothTime, Mathf.Infinity, Time.deltaTime);
-                transform.localRotation = Quaternion.Euler(0, Mathf.SmoothDampAngle(transform.localRotation.eulerAngles.y, syncedLocalPlayerHeading, ref previousPlayerAngularVelocity, smoothTime, Mathf.Infinity, Time.deltaTime), 0);
+                ownTransform.localPosition = Vector3.SmoothDamp(
+                    ownTransform.localPosition,
+                    syncedLocalPlayerPosition,
+                    ref previousPlayerLinearVelocity,
+                    smoothTime,
+                    Mathf.Infinity,
+                    Time.deltaTime
+                );
+                ownTransform.localRotation = Quaternion.Euler(
+                    0,
+                    Mathf.SmoothDampAngle(
+                        ownTransform.localRotation.eulerAngles.y,
+                        syncedLocalPlayerHeading,
+                        ref previousPlayerAngularVelocity,
+                        smoothTime,
+                        Mathf.Infinity,
+                        Time.deltaTime
+                    ),
+                    0
+                );
 
-
-                /*
-                //ToDo: Fix level with horizon
-                Quaternion localHeading = Quaternion.Euler(0, Mathf.SmoothDampAngle(transform.localRotation.eulerAngles.y, syncedLocalPlayerHeading, ref previousPlayerAngularVelocity, 0.04f, Mathf.Infinity, Time.deltaTime), 0);
-                transform.LookAt(transform.parent.TransformDirection(localHeading * Vector3.forward),Vector3.up);
-                */
+                // ensure player is always level with horizon
+                ownTransform.rotation = Quaternion.Euler(0, ownTransform.rotation.y, 0);
             }
 
             if (serialize && Time.timeSinceLevelLoad > nextSerializationTime)
@@ -96,7 +113,17 @@ namespace NUMovementPlatformSyncMod
 
         public void _OnOwnerSet()
         {
+            if (!transform.parent)
+            {
+                return;
+            }
+
             movementModLinker linker = transform.parent.GetComponent<movementModLinker>();
+            if (!Utilities.IsValid(linker))
+            {
+                Debug.LogError($"{nameof(movementModLinker)} missing on {transform.parent.name}");
+                return;
+            }
 
             NUMovementSyncModLink = linker.LinkedMovementMod;
 
@@ -125,33 +152,32 @@ namespace NUMovementPlatformSyncMod
         public override void OnPreSerialization()
         {
             nextSerializationTime = Time.timeSinceLevelLoad + timeBetweenSerializations;
-
-            if (!setupComplete) return;
-
-            if (attachedTransformIndex != -1)
+            if (!setupComplete || attachedTransformIndex == -1)
             {
-                syncedLocalPlayerPosition = GroundTransform.InverseTransformPoint(Networking.LocalPlayer.GetPosition());
-                syncedLocalPlayerHeading = (Quaternion.Inverse(GroundTransform.rotation) * Networking.LocalPlayer.GetRotation()).eulerAngles.y;
+                return;
             }
+
+            var playerOrigin = Networking.LocalPlayer.GetTrackingData(VRCPlayerApi.TrackingDataType.Origin);
+            var playerRotationOnGround = Quaternion.Inverse(GroundTransform.rotation) * playerOrigin.rotation;
+
+            syncedLocalPlayerPosition = GroundTransform.InverseTransformPoint(playerOrigin.position);
+            syncedLocalPlayerHeading = playerRotationOnGround.eulerAngles.y;
         }
 
         public override void OnDeserialization()
         {
-            if (!setupComplete) return;
-
-            if (previouslyAttachedTransformIndex != attachedTransformIndex)
+            if (!setupComplete || previouslyAttachedTransformIndex == attachedTransformIndex)
             {
-                previouslyAttachedTransformIndex = attachedTransformIndex;
-
-                if (attachedTransformIndex == -1)
-                {
-
-                }
-                else
-                {
-                    linkedStation.transform.parent = movingTransforms[attachedTransformIndex];
-                }
+                return;
             }
+
+            previouslyAttachedTransformIndex = attachedTransformIndex;
+            if (attachedTransformIndex == -1)
+            {
+                return;
+            }
+
+            linkedStation.transform.parent = movingTransforms[attachedTransformIndex];
         }
 
         public override void OnStationEntered(VRCPlayerApi player)
