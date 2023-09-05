@@ -118,10 +118,10 @@ namespace NUMovementPlatformSyncMod
                 return;
             }
 
-            movementModLinker linker = transform.parent.GetComponent<movementModLinker>();
+            MovementModLinker linker = transform.parent.GetComponent<MovementModLinker>();
             if (!Utilities.IsValid(linker))
             {
-                Debug.LogError($"{nameof(movementModLinker)} missing on {transform.parent.name}");
+                Debug.LogError($"{nameof(MovementModLinker)} missing on {transform.parent.name}");
                 return;
             }
 
