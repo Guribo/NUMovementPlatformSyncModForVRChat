@@ -87,10 +87,11 @@ namespace NUMovementPlatformSyncMod
                     Mathf.Infinity,
                     Time.deltaTime
                 );
+
                 ownTransform.localRotation = Quaternion.Euler(
                     0,
                     Mathf.SmoothDampAngle(
-                        ownTransform.localRotation.eulerAngles.y,
+                        ownTransform.localRotation.normalized.eulerAngles.y,
                         syncedLocalPlayerHeading,
                         ref previousPlayerAngularVelocity,
                         smoothTime,
@@ -101,7 +102,7 @@ namespace NUMovementPlatformSyncMod
                 );
 
                 // ensure player is always level with horizon
-                ownTransform.rotation = Quaternion.Euler(0, ownTransform.rotation.y, 0);
+                //ownTransform.rotation = Quaternion.Euler(0, ownTransform.rotation.normalized.y, 0);
             }
 
             if (serialize && Time.timeSinceLevelLoad > nextSerializationTime)
@@ -126,6 +127,11 @@ namespace NUMovementPlatformSyncMod
             }
 
             NUMovementSyncModLink = linker.LinkedMovementMod;
+            if (!Utilities.IsValid(NUMovementSyncModLink))
+            {
+                Debug.LogError($"{linker.LinkedMovementMod} is not set on {linker.name}");
+                return;
+            }
 
             movingTransforms = NUMovementSyncModLink.MovingTransforms;
 
@@ -161,7 +167,7 @@ namespace NUMovementPlatformSyncMod
             var playerRotationOnGround = Quaternion.Inverse(GroundTransform.rotation) * playerOrigin.rotation;
 
             syncedLocalPlayerPosition = GroundTransform.InverseTransformPoint(playerOrigin.position);
-            syncedLocalPlayerHeading = playerRotationOnGround.eulerAngles.y;
+            syncedLocalPlayerHeading = playerRotationOnGround.normalized.eulerAngles.y;
         }
 
         public override void OnDeserialization()
@@ -186,7 +192,10 @@ namespace NUMovementPlatformSyncMod
 
             previousPlayerLinearVelocity = Vector3.zero;
             previousPlayerAngularVelocity = 0;
-            transform.SetPositionAndRotation(player.GetPosition(), player.GetRotation());
+
+            var playerOrigin = Networking.LocalPlayer.GetTrackingData(VRCPlayerApi.TrackingDataType.Origin);
+
+            transform.SetPositionAndRotation(playerOrigin.position, playerOrigin.rotation);
             linkedStation.PlayerMobility = VRCStation.Mobility.ImmobilizeForVehicle;
 
             inStation = true;
